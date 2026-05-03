@@ -1,0 +1,24 @@
+============================================================
+DATA CLEANING SUMMARY REPORT
+============================================================
+
+Total Records: 1000
+
+Categories: 50
+
+Top 5 Categories:
+Default           149
+Nonfiction        110
+Sequential Art     74
+Add a comment      67
+Fiction            64
+
+Price Statistics:
+  - Mean: £34.97
+  - Min: £10.00
+  - Max: £59.99
+
+Stock Availability:
+  - In Stock: 1000
+
+============================================================
