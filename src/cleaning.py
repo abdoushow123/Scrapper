@@ -29,14 +29,27 @@ class DataCleaner:
         files = glob.glob(os.path.join(self.raw_dir, "*.csv"))
         
         if not files:
-            raise FileNotFoundError("Aucun fichier CSV trouvé dans data/raw")
+            raise FileNotFoundError("No CSV files found in data/raw")
 
-        latest_file = max(files, key=os.path.getctime)
-        return latest_file
+        # Look for all_books.csv file (single big file)
+        all_books_files = [f for f in files if 'all_books.csv' in f]
+        
+        if all_books_files:
+            latest_file = max(all_books_files, key=os.path.getctime)
+            print(f"Found all_books file: {latest_file}")
+            return latest_file
+        else:
+            # Fallback to any CSV file
+            latest_file = max(files, key=os.path.getctime)
+            print(f"Fallback to latest file: {latest_file}")
+            return latest_file
     
     def load_raw_data(self) -> List[Dict]:
         """
-        Load most recent raw CSV data automatically
+        Load raw data from single combined file
+        
+        Returns:
+            List of book records
         """
         filepath = self.get_latest_file()
         
@@ -164,6 +177,70 @@ class DataCleaner:
         
         print(f"Saved cleaned data to {filepath}")
     
+    def get_latest_cleaned_files(self) -> Dict[str, str]:
+        """Get latest cleaned files for each category"""
+        files = glob.glob(os.path.join(self.cleaned_dir, "*.csv"))
+        
+        if not files:
+            return {}
+        
+        # Group files by category
+        category_files = {}
+        
+        for file in files:
+            filename = os.path.basename(file)
+            # Extract category name from filename
+            if 'cleaned_' in filename:
+                # Format: timestamp_cleaned_category_name.csv
+                parts = filename.split('cleaned_')
+                if len(parts) > 1:
+                    category_part = parts[1].split('.csv')[0]
+                    category_name = category_part.replace('_', ' ').title()
+                    
+                    # Keep only the latest file for each category
+                    if category_name not in category_files or os.path.getctime(file) > os.path.getctime(category_files[category_name]):
+                        category_files[category_name] = file
+        
+        return category_files
+    
+    def top_bottom_analysis(self, data: List[Dict], metric: str = 'price_excl_tax', n: int = 5) -> Dict[str, List[Dict]]:
+        """Perform top/bottom analysis on specified metric"""
+        if not data:
+            return {'top_n': [], 'bottom_n': []}
+        
+        df = pd.DataFrame(data)
+        
+        if metric not in df.columns:
+            return {'top_n': [], 'bottom_n': []}
+        
+        # Sort by metric and get top/bottom
+        sorted_df = df.sort_values(metric, ascending=False)
+        top_n = sorted_df.head(n).to_dict('records')
+        bottom_n = sorted_df.tail(n).to_dict('records')
+        
+        return {
+            'top_n': top_n,
+            'bottom_n': bottom_n,
+            'metric': metric,
+            'count': n
+        }
+    
+    def median_statistics(self, data: List[Dict]) -> Dict[str, float]:
+        """Calculate median statistics for all numeric fields"""
+        if not data:
+            return {}
+        
+        df = pd.DataFrame(data)
+        numeric_cols = ['price_excl_tax', 'price_incl_tax', 'tax', 'stock_count', 'number_of_reviews']
+        
+        median_stats = {}
+        for col in numeric_cols:
+            if col in df.columns:
+                median_stats[col] = float(df[col].median())
+            else:
+                median_stats[col] = 0.0
+        
+        return median_stats
     def generate_summary_report(self, data: List[Dict]) -> str:
         if not data:
             return "No data to summarize"
@@ -184,8 +261,31 @@ class DataCleaner:
         report.append(f"  - Min: £{df['price_excl_tax'].min():.2f}")
         report.append(f"  - Max: £{df['price_excl_tax'].max():.2f}")
         
+        # Add median statistics
+        median_stats = self.median_statistics(data)
+        if median_stats:
+            report.append(f"\nMedian Statistics:")
+            for key, value in median_stats.items():
+                if key in ['price_excl_tax', 'price_incl_tax', 'tax']:
+                    report.append(f"  - {key.replace('_', ' ').title()}: £{value:.2f}")
+                else:
+                    report.append(f"  - {key.replace('_', ' ').title()}: {value:.0f}")
+        
         report.append(f"\nStock Availability:")
         report.append(f"  - In Stock: {df['in_stock'].sum()}")
+        
+        # Add top/bottom analysis
+        top_bottom = self.top_bottom_analysis(data, 'price_excl_tax', 5)
+        if top_bottom['top_n'] and top_bottom['bottom_n']:
+            report.append(f"\nTop 5 Books by Price:")
+            for i, book in enumerate(top_bottom['top_n'], 1):
+                title = book.get('title', 'Unknown')[:50] + '...' if len(book.get('title', 'Unknown')) > 50 else book.get('title', 'Unknown')
+                report.append(f"  {i}. {title} - £{book.get('price_excl_tax', 0):.2f}")
+            
+            report.append(f"\nBottom 5 Books by Price:")
+            for i, book in enumerate(top_bottom['bottom_n'], 1):
+                title = book.get('title', 'Unknown')[:50] + '...' if len(book.get('title', 'Unknown')) > 50 else book.get('title', 'Unknown')
+                report.append(f"  {i}. {title} - £{book.get('price_excl_tax', 0):.2f}")
         
         report.append("\n" + "=" * 60)
         
@@ -210,13 +310,14 @@ def main():
     print("Starting data cleaning...")
     print("=" * 50)
     
-    # 🔥 NOW AUTOMATIC (no filename needed)
+    # Load raw data from single file
     raw_data = cleaner.load_raw_data()
     
     if not raw_data:
         print("No data to clean. Exiting.")
         return
     
+    # Clean all data
     cleaned_data = cleaner.clean_all_data(raw_data)
     
     validation_stats = cleaner.validate_data(cleaned_data)
@@ -224,6 +325,7 @@ def main():
     for key, value in validation_stats.items():
         print(f"  {key}: {value}")
     
+    # Save cleaned data
     cleaner.save_cleaned_csv(cleaned_data, "cleaned_books.csv")
     cleaner.save_summary_report(cleaned_data)
     

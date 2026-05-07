@@ -5,7 +5,9 @@ Data Analysis Module for Books Scraping Project
 import pandas as pd
 import os
 import glob
-import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
+from typing import Dict, List, Tuple
 
 
 class DataAnalyzer:
@@ -13,36 +15,61 @@ class DataAnalyzer:
     def __init__(self, cleaned_dir="data/cleaned"):
         self.cleaned_dir = cleaned_dir
         self.df = None
+        self.load_data()
 
     # 📂 Charger automatiquement le dernier fichier cleaned
     def load_data(self):
+        """Load data from single cleaned file"""
         files = glob.glob(os.path.join(self.cleaned_dir, "*.csv"))
 
         if not files:
-            raise FileNotFoundError("Aucun fichier cleaned trouvé dans data/cleaned")
+            print("No cleaned files found in data/cleaned")
+            self.df = pd.DataFrame()
+            return self.df
 
-        latest_file = max(files, key=os.path.getctime)
-
-        print(f" Loading file: {latest_file}")
-
-        self.df = pd.read_csv(latest_file)
+        # Look for cleaned_books.csv file (single big file)
+        cleaned_books_files = [f for f in files if 'cleaned_books.csv' in f]
+        
+        if cleaned_books_files:
+            latest_file = max(cleaned_books_files, key=os.path.getctime)
+            print(f"Loading cleaned data from: {latest_file}")
+            self.df = pd.read_csv(latest_file)
+        else:
+            # Fallback to any cleaned CSV file
+            latest_file = max(files, key=os.path.getctime)
+            print(f"Fallback to latest cleaned file: {latest_file}")
+            self.df = pd.read_csv(latest_file)
+        
         return self.df
 
     # 📊 TOP / BOTTOM BOOKS
-    def get_top_bottom_books(self, column="price_excl_tax"):
-        top5 = self.df.sort_values(column, ascending=False).head(5)
-        bottom5 = self.df.sort_values(column, ascending=True).head(5)
-        return top5, bottom5
+    def get_top_bottom_books(self, metric: str = 'price_excl_tax', n: int = 5) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Return top n and bottom n books by specified metric"""
+        if self.df is None:
+            self.load_data()
+        sorted_df = self.df.sort_values(metric, ascending=False)
+        top_n = sorted_df.head(n)
+        bottom_n = sorted_df.tail(n)
+        return top_n, bottom_n
 
     # 📊 MÉDIANE
+    def calculate_median_stats(self) -> Dict[str, float]:
+        """Calculate median statistics for numeric fields"""
+        if self.df is None:
+            self.load_data()
+        numeric_cols = ['price_excl_tax', 'price_incl_tax', 'tax', 'stock_count', 'number_of_reviews']
+        return {col: self.df[col].median() for col in numeric_cols}
+    
     def get_median(self):
-        cols = ["price_excl_tax", "price_incl_tax", "tax", "stock_count", "number_of_reviews"]
-        return self.df[cols].median()
+        """Legacy method for compatibility"""
+        return self.calculate_median_stats()
 
-    # 📊 MOYENNE
-    def get_mean(self):
-        cols = ["price_excl_tax", "price_incl_tax", "tax", "stock_count", "number_of_reviews"]
-        return self.df[cols].mean()
+    def get_available_categories(self) -> List[str]:
+        """Get list of available categories from the data"""
+        if self.df is not None and 'category' in self.df.columns:
+            return sorted(self.df['category'].unique().tolist())
+        else:
+            return []
 
     # 📊 CATÉGORIES
     def category_analysis(self):
@@ -55,31 +82,60 @@ class DataAnalyzer:
             "out_of_stock": int((~self.df["in_stock"]).sum())
         }
 
-    # 📊 GRAPH 1 - Catégories
-    def plot_categories(self):
-        self.df["category"].value_counts().head(10).plot(kind="bar")
-        plt.title("Top 10 Categories")
-        plt.xlabel("Category")
-        plt.ylabel("Number of Books")
-        plt.tight_layout()
-        plt.show()
-
-    # 📊 GRAPH 2 - Prix
-    def plot_prices(self):
-        self.df["price_excl_tax"].plot(kind="hist", bins=20)
-        plt.title("Price Distribution")
-        plt.xlabel("Price")
-        plt.ylabel("Frequency")
-        plt.tight_layout()
-        plt.show()
-
-    # 📊 GRAPH 3 - Stock
-    def plot_stock(self):
-        self.df["in_stock"].value_counts().plot(kind="pie", autopct="%1.1f%%")
-        plt.title("Stock Availability")
-        plt.ylabel("")
-        plt.tight_layout()
-        plt.show()
+    # 📊 PLOTLY VISUALIZATIONS
+    def create_price_distribution(self) -> go.Figure:
+        """Create price distribution histogram"""
+        if self.df is None:
+            self.load_data()
+        fig = px.histogram(self.df, x='price_excl_tax', title='Price Distribution', 
+                         labels={'price_excl_tax': 'Price (£)', 'count': 'Frequency'})
+        fig.update_layout(template='plotly_white')
+        return fig
+    
+    def create_category_chart(self) -> go.Figure:
+        """Create category distribution pie chart"""
+        if self.df is None:
+            self.load_data()
+        category_counts = self.df['category'].value_counts().head(10)
+        fig = px.pie(values=category_counts.values, names=category_counts.index, 
+                    title='Top 10 Book Categories')
+        fig.update_layout(template='plotly_white')
+        return fig
+    
+    def create_availability_chart(self) -> go.Figure:
+        """Create stock availability bar chart"""
+        if self.df is None:
+            self.load_data()
+        stock_counts = self.df['in_stock'].value_counts()
+        fig = px.bar(x=['In Stock', 'Out of Stock'], y=[stock_counts.get(True, 0), stock_counts.get(False, 0)],
+                    title='Stock Availability', labels={'x': 'Status', 'y': 'Number of Books'})
+        fig.update_layout(template='plotly_white')
+        return fig
+    
+    def create_price_evolution(self) -> go.Figure:
+        """Create price trends line chart (synthetic data for demonstration)"""
+        if self.df is None:
+            self.load_data()
+        # Create synthetic price evolution data
+        price_trend = self.df['price_excl_tax'].sort_values().reset_index(drop=True)
+        fig = px.line(x=range(len(price_trend)), y=price_trend, 
+                    title='Price Evolution (Sorted by Price)',
+                    labels={'x': 'Book Index (Sorted by Price)', 'y': 'Price (£)'})
+        fig.update_layout(template='plotly_white')
+        return fig
+    
+    def create_top_bottom_chart(self, metric: str = 'price_excl_tax') -> go.Figure:
+        """Create top/bottom books bar chart"""
+        if self.df is None:
+            self.load_data()
+        top, bottom = self.get_top_bottom_books(metric, 5)
+        combined = pd.concat([top, bottom])
+        labels = ['Top'] * 5 + ['Bottom'] * 5
+        fig = px.bar(combined, x='title', y=metric, color=labels,
+                    title=f'Top/Bottom 5 Books by {metric.replace("_", " ").title()}',
+                    labels={'title': 'Book Title', metric: metric.replace("_", " ").title()})
+        fig.update_layout(template='plotly_white', xaxis_tickangle=-45)
+        return fig
 
 
 # 🧪 TEST DU MODULE
