@@ -57,7 +57,7 @@ class BookScraper:
         Extract product information from a book's detail page
         
         Args:
-            book_url: URL of the book's detail page
+            book_url: URL of book's detail page
             
         Returns:
             Dictionary containing product information
@@ -68,7 +68,7 @@ class BookScraper:
         
         book_info = {}
         
-        # Extract product information from the product table
+        # Extract product information from product table
         product_table = soup.find('table', class_='table table-striped')
         if product_table:
             rows = product_table.find_all('tr')
@@ -115,7 +115,7 @@ class BookScraper:
         Get all book URLs from a category page and extract their details
         
         Args:
-            page_url: URL of the category page
+            page_url: URL of category page
             
         Returns:
             List of book information dictionaries
@@ -182,7 +182,7 @@ class BookScraper:
     
     def scrape_all_categories(self) -> List[Dict[str, str]]:
         """
-        Scrape all categories on the website
+        Scrape all categories on the website and save to one big file
         
         Returns:
             List of all books from all categories
@@ -204,15 +204,13 @@ class BookScraper:
             category_url = self.BASE_URL + '/' + link['href']
             print(f"\n=== Scraping category: {category_name} ===")
             
+            # Scrape books for this category
             books = self.get_all_pages_in_category(category_url)
             all_books.extend(books)
             
-            # Save category data separately
-            self.save_data(books, f"books_{category_name.lower().replace(' ', '_')}.csv")
-            
             time.sleep(1)  # Be respectful to the server
         
-        # Save all data
+        # Save all data to one big file
         self.save_data(all_books, "all_books.csv")
         return all_books
     
@@ -240,11 +238,12 @@ def main():
     print("Starting web scraping...")
     print("=" * 50)
     
-    # Scrape all categories
+    # Scrape all categories into one big file
     all_books = scraper.scrape_all_categories()
     
     print("=" * 50)
     print(f"Scraping complete! Total books scraped: {len(all_books)}")
+    print(f"All books saved to single file: all_books.csv")
 
 
 if __name__ == "__main__":
