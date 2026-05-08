@@ -28,7 +28,11 @@ class BookScraper:
         self.output_dir = output_dir
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         })
         
         # Create output directory if it doesn't exist
@@ -131,7 +135,14 @@ class BookScraper:
             book_link = book.find('h3').find('a')
             if book_link:
                 # Construct full URL for book detail page
-                book_url = self.BASE_URL + '/catalogue/' + book_link['href'].replace('../../../', '')
+                href = book_link['href'].replace('../../../', '')
+                # Handle different URL structures
+                if href.startswith('catalogue/'):
+                    # Link is already relative to base URL
+                    book_url = self.BASE_URL + '/' + href
+                else:
+                    # Link needs catalogue prefix (for category pages)
+                    book_url = self.BASE_URL + '/catalogue/' + href
                 book_info = self.get_book_details(book_url)
                 if book_info:
                     books.append(book_info)
@@ -169,7 +180,14 @@ class BookScraper:
                             # Navigate to parent directory
                             current_url = current_url.rsplit('/', 1)[0] + '/' + next_link['href'].replace('../', '')
                         else:
-                            current_url = self.BASE_URL + '/catalogue/' + next_link['href']
+                            # Handle different URL structures
+                            href = next_link['href']
+                            if href.startswith('catalogue/'):
+                                # Link is already relative to base URL
+                                current_url = self.BASE_URL + '/' + href
+                            else:
+                                # Link needs catalogue prefix (for category pages)
+                                current_url = self.BASE_URL + '/catalogue/' + href
                         time.sleep(1)  # Be respectful to the server
                     else:
                         current_url = None
@@ -180,35 +198,21 @@ class BookScraper:
         
         return all_books
     
-    def scrape_all_categories(self) -> List[Dict[str, str]]:
+    def scrape_all_books(self) -> List[Dict[str, str]]:
         """
-        Scrape all categories on the website and save to one big file
+        Scrape all books from the main catalog at once
         
         Returns:
-            List of all books from all categories
+            List of all books from the main catalog
         """
-        soup = self.get_page(self.BASE_URL)
-        if not soup:
-            return []
+        print("=== Scraping all books from main catalog ===")
         
-        # Find all category links
-        category_section = soup.find('div', class_='side_categories')
-        if not category_section:
-            return []
-        
-        category_links = category_section.find_all('a')
+        # Start from the base URL (main catalog page)
         all_books = []
         
-        for link in category_links[1:]:  # Skip the first "Books" link
-            category_name = link.text.strip()
-            category_url = self.BASE_URL + '/' + link['href']
-            print(f"\n=== Scraping category: {category_name} ===")
-            
-            # Scrape books for this category
-            books = self.get_all_pages_in_category(category_url)
-            all_books.extend(books)
-            
-            time.sleep(1)  # Be respectful to the server
+        # Scrape all pages in the main catalog starting from base URL
+        books = self.get_all_pages_in_category(self.BASE_URL)
+        all_books.extend(books)
         
         # Save all data to one big file
         self.save_data(all_books, "all_books.csv")
@@ -238,8 +242,8 @@ def main():
     print("Starting web scraping...")
     print("=" * 50)
     
-    # Scrape all categories into one big file
-    all_books = scraper.scrape_all_categories()
+    # Scrape all books at once from main catalog
+    all_books = scraper.scrape_all_books()
     
     print("=" * 50)
     print(f"Scraping complete! Total books scraped: {len(all_books)}")
